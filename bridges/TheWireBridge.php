@@ -1,77 +1,88 @@
 <?php
-// URL of The Wire homepage or category page
-$url = "https://thewire.in/";
 
-// Fetch the HTML content
-$html = file_get_contents($url);
-if (!$html) {
-    die("Could not fetch The Wire homepage.");
+class TheWireBridge extends BridgeAbstract {
+    const NAME = 'The Wire';
+    const URI = 'https://thewire.in/';
+    const DESCRIPTION = 'Latest articles from The Wire';
+    const MAINTAINER = 'ChatGPT';
+    const PARAMETERS = [];
+
+    /**
+     * Fetches the webpage using cURL with a browser User-Agent.
+     * Throws exception on failure.
+     */
+    private function fetchPage(string $url): string {
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36');
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+
+        $result = curl_exec($ch);
+        if ($result === false) {
+            $error = curl_error($ch);
+            curl_close($ch);
+            throw new Exception("Curl error: $error");
+        }
+        curl_close($ch);
+        return $result;
+    }
+
+    public function collectData() {
+        try {
+            $htmlContent = $this->fetchPage(self::URI);
+        } catch (Exception $e) {
+            throw new Exception("Could not fetch The Wire homepage: " . $e->getMessage());
+        }
+
+        $html = str_get_html($htmlContent);
+        if (!$html) {
+            throw new Exception("Failed to parse HTML from The Wire");
+        }
+
+        // Based on your inspect element, articles are in div.listing__block--main div.listing__item
+        $articles = $html->find('div.listing__block--main div.listing__item');
+
+        if (!$articles) {
+            throw new Exception("No articles found on The Wire homepage");
+        }
+
+        foreach ($articles as $article) {
+            $item = [];
+
+            // Article URL and UID
+            $linkElement = $article->find('a', 0);
+            if (!$linkElement || !isset($linkElement->href)) {
+                continue;
+            }
+            $item['uri'] = $linkElement->href;
+            $item['uid'] = $linkElement->href;
+
+            // Title
+            $titleElement = $article->find('h2.listing__title', 0);
+            $item['title'] = $titleElement ? trim($titleElement->plaintext) : 'No title';
+
+            // Summary / Description - looks like <p class="listing__summary">
+            $summaryElement = $article->find('p.listing__summary', 0);
+            if ($summaryElement) {
+                $item['content'] = trim($summaryElement->plaintext);
+            } else {
+                $item['content'] = $item['title']; // fallback
+            }
+
+            // Author - appears to be in span.listing__author
+            $authorElement = $article->find('span.listing__author', 0);
+            $item['author'] = $authorElement ? trim($authorElement->plaintext) : '';
+
+            // Timestamp - usually in time.listing__date, with datetime attribute
+            $timeElement = $article->find('time.listing__date', 0);
+            if ($timeElement && isset($timeElement->datetime)) {
+                $item['timestamp'] = strtotime($timeElement->datetime);
+            } else {
+                $item['timestamp'] = time();
+            }
+
+            $this->items[] = $item;
+        }
+    }
 }
-
-// Load HTML into DOMDocument
-libxml_use_internal_errors(true); // Suppress warnings for malformed HTML
-$doc = new DOMDocument();
-$doc->loadHTML($html);
-libxml_clear_errors();
-
-// Use XPath to query specific article blocks
-$xpath = new DOMXPath($doc);
-
-// XPath query to select article containers (adjusted per your inspect snippet)
-$articles = $xpath->query("//div[contains(@class, 'article-container')]");
-
-header("Content-Type: application/rss+xml; charset=UTF-8");
-
-// Start RSS feed output
-echo '<?xml version="1.0" encoding="UTF-8"?>';
-?>
-<rss version="2.0">
-<channel>
-    <title>The Wire - Latest Articles</title>
-    <link>https://thewire.in/</link>
-    <description>Latest news and articles from The Wire</description>
-<?php
-
-$maxItems = 10;
-$count = 0;
-
-foreach ($articles as $article) {
-    if ($count >= $maxItems) break;
-
-    // Extract article title
-    $titleNode = $xpath->query(".//div[contains(@class, 'article-title')]//a", $article);
-    $title = $titleNode->length ? trim($titleNode->item(0)->nodeValue) : "No title";
-
-    // Extract article link
-    $link = $titleNode->length ? $titleNode->item(0)->getAttribute('href') : '';
-
-    // Ensure full URL
-    if ($link && strpos($link, 'http') !== 0) {
-        $link = rtrim($url, '/') . '/' . ltrim($link, '/');
-    }
-
-    // Extract image URL
-    $imgNode = $xpath->query(".//a[contains(@class, 'article-image-container')]//img", $article);
-    $imageUrl = $imgNode->length ? $imgNode->item(0)->getAttribute('src') : '';
-
-    // Extract excerpt if available
-    $excerptNode = $xpath->query(".//div[contains(@class, 'article-excerpt')]", $article);
-    $excerpt = $excerptNode->length ? trim($excerptNode->item(0)->nodeValue) : '';
-
-    // Output RSS item
-    echo "<item>\n";
-    echo "<title><![CDATA[$title]]></title>\n";
-    echo "<link><![CDATA[$link]]></link>\n";
-    if ($imageUrl) {
-        echo "<enclosure url=\"" . htmlspecialchars($imageUrl) . "\" type=\"image/jpeg\" />\n";
-    }
-    if ($excerpt) {
-        echo "<description><![CDATA[$excerpt]]></description>\n";
-    }
-    echo "</item>\n";
-
-    $count++;
-}
-?>
-</channel>
-</rss>
