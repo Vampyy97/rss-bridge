@@ -1,9 +1,9 @@
 <?php
 
-class TheWireBridge extends BridgeAbstract {
-    const NAME = 'The Wire Articles';
+class TheWireVideosBridge extends BridgeAbstract {
+    const NAME = 'The Wire Videos Section';
     const URI = 'https://thewire.in/';
-    const DESCRIPTION = 'Fetches latest article headlines, images, and descriptions from The Wire homepage';
+    const DESCRIPTION = 'Fetches latest videos with titles, links, and thumbnails from The Wire';
     const MAINTAINER = 'ChatGPT';
     const PARAMETERS = [];
 
@@ -13,42 +13,37 @@ class TheWireBridge extends BridgeAbstract {
             throw new \Exception('Could not fetch The Wire homepage.');
         }
 
-        // Find article containers (update selector if site changes)
-        $articles = $html->find('div.tw-article-list div.tw-article'); 
-        if (!$articles) {
-            throw new \Exception('No articles found on The Wire homepage.');
+        // Find the videos container
+        $videosContainer = $html->find('div.hp-videos', 0);
+        if (!$videosContainer) {
+            throw new \Exception('Could not find videos container on The Wire homepage.');
         }
 
-        foreach ($articles as $article) {
+        // Find each video block inside container
+        foreach ($videosContainer->find('div.hp-video-content') as $video) {
             $item = [];
 
-            // Extract article link and make absolute URL
-            $link = $article->find('a.tw-article-link', 0);
-            if (!$link || !isset($link->href)) {
+            // Find link and normalize URL
+            $a = $video->find('a', 0);
+            if (!$a || !isset($a->href)) {
                 continue;
             }
-            $item['uri'] = self::URI . ltrim($link->href, '/');
+            $item['uri'] = self::URI . ltrim($a->href, '/');
             $item['uid'] = $item['uri'];
 
-            // Extract title
-            $titleEl = $article->find('h3.tw-article-title', 0);
-            $item['title'] = $titleEl ? trim($titleEl->plaintext) : 'No title';
+            // Get the image src
+            $img = $video->find('img#article-image', 0);
+            $item['enclosures'] = ($img && $img->src) ? [$img->src] : [];
 
-            // Extract description (if available)
-            $descEl = $article->find('p.tw-article-description', 0);
-            $item['content'] = $descEl ? trim($descEl->plaintext) : $item['title'];
+            // Extract title text from the div.hp-video-title sibling
+            $titleDiv = $video->find('div.hp-video-title', 0);
+            $item['title'] = $titleDiv ? trim($titleDiv->plaintext) : 'No title';
 
-            // Extract image URL (if available)
-            $imgEl = $article->find('img.tw-article-image', 0);
-            $item['enclosures'] = ($imgEl && $imgEl->src) ? [$imgEl->src] : [];
+            // Optional: no description available in this snippet, so just use title
+            $item['content'] = $item['title'];
 
-            // Extract timestamp if available (else fallback to now)
-            $timeEl = $article->find('time', 0);
-            if ($timeEl && $timeEl->datetime) {
-                $item['timestamp'] = strtotime($timeEl->datetime);
-            } else {
-                $item['timestamp'] = time();
-            }
+            // Timestamp not available in snippet; fallback to current time
+            $item['timestamp'] = time();
 
             $this->items[] = $item;
         }
