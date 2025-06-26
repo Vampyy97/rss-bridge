@@ -1,3 +1,4 @@
+  <?php
 class IndianExpressMixBridge extends BridgeAbstract {
     const NAME = 'Indian Express Mixed Feed';
     const URI = 'https://indianexpress.com/';
