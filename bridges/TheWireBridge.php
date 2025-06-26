@@ -3,86 +3,52 @@
 class TheWireBridge extends BridgeAbstract {
     const NAME = 'The Wire';
     const URI = 'https://thewire.in/';
-    const DESCRIPTION = 'Latest articles from The Wire';
+    const DESCRIPTION = 'Fetches videos and headlines from The Wire homepage';
     const MAINTAINER = 'ChatGPT';
     const PARAMETERS = [];
 
-    /**
-     * Fetches the webpage using cURL with a browser User-Agent.
-     * Throws exception on failure.
-     */
-    private function fetchPage(string $url): string {
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36');
-        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
-
-        $result = curl_exec($ch);
-        if ($result === false) {
-            $error = curl_error($ch);
-            curl_close($ch);
-            throw new Exception("Curl error: $error");
-        }
-        curl_close($ch);
-        return $result;
-    }
-
     public function collectData() {
-        try {
-            $htmlContent = $this->fetchPage(self::URI);
-        } catch (Exception $e) {
-            throw new Exception("Could not fetch The Wire homepage: " . $e->getMessage());
-        }
-
-        $html = str_get_html($htmlContent);
+        $html = getSimpleHTMLDOM(self::URI);
         if (!$html) {
-            throw new Exception("Failed to parse HTML from The Wire");
+            return;
         }
 
-        // Based on your inspect element, articles are in div.listing__block--main div.listing__item
-        $articles = $html->find('div.listing__block--main div.listing__item');
-
-        if (!$articles) {
-            throw new Exception("No articles found on The Wire homepage");
+        $container = $html->find('div.hp-videos-container', 0);
+        if (!$container) {
+            throw new \Exception('Could not find videos container on The Wire homepage');
         }
 
-        foreach ($articles as $article) {
-            $item = [];
-
-            // Article URL and UID
-            $linkElement = $article->find('a', 0);
-            if (!$linkElement || !isset($linkElement->href)) {
+        foreach ($container->find('div.hp-video-content') as $videoDiv) {
+            $link = $videoDiv->find('div.hp-video-content-image a', 0);
+            if (!$link || !$link->href) {
                 continue;
             }
-            $item['uri'] = $linkElement->href;
-            $item['uid'] = $linkElement->href;
 
-            // Title
-            $titleElement = $article->find('h2.listing__title', 0);
-            $item['title'] = $titleElement ? trim($titleElement->plaintext) : 'No title';
+            $item = [];
+            $item['uri'] = $link->href;
+            $item['uid'] = $link->href;
 
-            // Summary / Description - looks like <p class="listing__summary">
-            $summaryElement = $article->find('p.listing__summary', 0);
-            if ($summaryElement) {
-                $item['content'] = trim($summaryElement->plaintext);
+            $img = $link->find('img', 0);
+            if ($img && $img->src) {
+                $item['enclosures'] = [$img->src];
             } else {
-                $item['content'] = $item['title']; // fallback
+                $item['enclosures'] = [];
             }
 
-            // Author - appears to be in span.listing__author
-            $authorElement = $article->find('span.listing__author', 0);
-            $item['author'] = $authorElement ? trim($authorElement->plaintext) : '';
+            $titleDiv = $videoDiv->find('div.hp-video-title', 0);
+            $item['title'] = $titleDiv ? trim($titleDiv->plaintext) : 'No title';
 
-            // Timestamp - usually in time.listing__date, with datetime attribute
-            $timeElement = $article->find('time.listing__date', 0);
-            if ($timeElement && isset($timeElement->datetime)) {
-                $item['timestamp'] = strtotime($timeElement->datetime);
-            } else {
-                $item['timestamp'] = time();
-            }
+            // You can enhance content here by scraping more text if needed
+            $item['content'] = $item['title'];
+
+            // Timestamp or author info is not clearly present in the snippet; leaving empty
+            $item['timestamp'] = time();
 
             $this->items[] = $item;
+        }
+
+        if (count($this->items) === 0) {
+            throw new \Exception('No videos found on The Wire homepage');
         }
     }
 }
