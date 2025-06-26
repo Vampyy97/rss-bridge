@@ -1,54 +1,53 @@
 <?php
 
 class TheWireBridge extends BridgeAbstract {
-    const NAME = 'The Wire';
+    const NAME = 'The Wire Videos';
     const URI = 'https://thewire.in/';
-    const DESCRIPTION = 'Fetches videos and headlines from The Wire homepage';
+    const DESCRIPTION = 'Fetches video posts from The Wire homepage';
     const MAINTAINER = 'ChatGPT';
     const PARAMETERS = [];
 
     public function collectData() {
         $html = getSimpleHTMLDOM(self::URI);
         if (!$html) {
-            return;
+            throw new \Exception('Could not fetch The Wire homepage.');
         }
 
-        $container = $html->find('div.hp-videos-container', 0);
-        if (!$container) {
-            throw new \Exception('Could not find videos container on The Wire homepage');
+        $videosContainer = $html->find('div.hp-videos', 0);
+        if (!$videosContainer) {
+            throw new \Exception('Could not find videos container on The Wire homepage.');
         }
 
-        foreach ($container->find('div.hp-video-content') as $videoDiv) {
-            $link = $videoDiv->find('div.hp-video-content-image a', 0);
-            if (!$link || !$link->href) {
+        foreach ($videosContainer->find('div.hp-video-content') as $video) {
+            $linkTag = $video->find('div.hp-video-content-image a', 0);
+            if (!$linkTag || !isset($linkTag->href)) {
                 continue;
             }
 
             $item = [];
-            $item['uri'] = $link->href;
-            $item['uid'] = $link->href;
+            $item['uri'] = self::URI . $linkTag->href;
+            $item['uid'] = $item['uri'];
 
-            $img = $link->find('img', 0);
-            if ($img && $img->src) {
-                $item['enclosures'] = [$img->src];
+            $imgTag = $linkTag->find('img#article-image', 0);
+            if ($imgTag && isset($imgTag->src)) {
+                $item['enclosures'] = [$imgTag->src];
             } else {
                 $item['enclosures'] = [];
             }
 
-            $titleDiv = $videoDiv->find('div.hp-video-title', 0);
+            $titleDiv = $video->find('div.hp-video-title', 0);
             $item['title'] = $titleDiv ? trim($titleDiv->plaintext) : 'No title';
 
-            // You can enhance content here by scraping more text if needed
             $item['content'] = $item['title'];
 
-            // Timestamp or author info is not clearly present in the snippet; leaving empty
+            // No timestamp info available in snippet, so use current time
             $item['timestamp'] = time();
 
             $this->items[] = $item;
         }
 
         if (count($this->items) === 0) {
-            throw new \Exception('No videos found on The Wire homepage');
+            throw new \Exception('No videos found on The Wire homepage.');
         }
     }
 }
