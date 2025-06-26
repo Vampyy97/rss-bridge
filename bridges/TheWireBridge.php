@@ -1,9 +1,9 @@
 <?php
 
 class TheWireBridge extends BridgeAbstract {
-    const NAME = 'The Wire Videos';
+    const NAME = 'The Wire Articles';
     const URI = 'https://thewire.in/';
-    const DESCRIPTION = 'Fetches video posts from The Wire homepage';
+    const DESCRIPTION = 'Fetches latest article headlines, images, and descriptions from The Wire homepage';
     const MAINTAINER = 'ChatGPT';
     const PARAMETERS = [];
 
@@ -13,41 +13,44 @@ class TheWireBridge extends BridgeAbstract {
             throw new \Exception('Could not fetch The Wire homepage.');
         }
 
-        $videosContainer = $html->find('div.hp-videos', 0);
-        if (!$videosContainer) {
-            throw new \Exception('Could not find videos container on The Wire homepage.');
+        // Find article containers (update selector if site changes)
+        $articles = $html->find('div.tw-article-list div.tw-article'); 
+        if (!$articles) {
+            throw new \Exception('No articles found on The Wire homepage.');
         }
 
-        foreach ($videosContainer->find('div.hp-video-content') as $video) {
-            $linkTag = $video->find('div.hp-video-content-image a', 0);
-            if (!$linkTag || !isset($linkTag->href)) {
+        foreach ($articles as $article) {
+            $item = [];
+
+            // Extract article link and make absolute URL
+            $link = $article->find('a.tw-article-link', 0);
+            if (!$link || !isset($link->href)) {
                 continue;
             }
-
-            $item = [];
-            $item['uri'] = self::URI . $linkTag->href;
+            $item['uri'] = self::URI . ltrim($link->href, '/');
             $item['uid'] = $item['uri'];
 
-            $imgTag = $linkTag->find('img#article-image', 0);
-            if ($imgTag && isset($imgTag->src)) {
-                $item['enclosures'] = [$imgTag->src];
+            // Extract title
+            $titleEl = $article->find('h3.tw-article-title', 0);
+            $item['title'] = $titleEl ? trim($titleEl->plaintext) : 'No title';
+
+            // Extract description (if available)
+            $descEl = $article->find('p.tw-article-description', 0);
+            $item['content'] = $descEl ? trim($descEl->plaintext) : $item['title'];
+
+            // Extract image URL (if available)
+            $imgEl = $article->find('img.tw-article-image', 0);
+            $item['enclosures'] = ($imgEl && $imgEl->src) ? [$imgEl->src] : [];
+
+            // Extract timestamp if available (else fallback to now)
+            $timeEl = $article->find('time', 0);
+            if ($timeEl && $timeEl->datetime) {
+                $item['timestamp'] = strtotime($timeEl->datetime);
             } else {
-                $item['enclosures'] = [];
+                $item['timestamp'] = time();
             }
 
-            $titleDiv = $video->find('div.hp-video-title', 0);
-            $item['title'] = $titleDiv ? trim($titleDiv->plaintext) : 'No title';
-
-            $item['content'] = $item['title'];
-
-            // No timestamp info available in snippet, so use current time
-            $item['timestamp'] = time();
-
             $this->items[] = $item;
-        }
-
-        if (count($this->items) === 0) {
-            throw new \Exception('No videos found on The Wire homepage.');
         }
     }
 }
