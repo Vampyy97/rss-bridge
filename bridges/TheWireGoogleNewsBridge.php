@@ -1,64 +1,68 @@
 <?php
 
 class TheWireGoogleNewsBridge extends BridgeAbstract {
-    const NAME = 'The Wire Articles via Google News';
-    const URI = 'https://news.google.com/search?q=thewire&hl=en-IN&gl=IN&ceid=IN%3Aen';
-    const DESCRIPTION = 'Fetches latest The Wire articles via Google News search results';
+    const NAME = 'The Wire Google News Publications';
+    const URI = 'https://news.google.com/publications/CAAqJAgKIh5DQklTRUFnTWFnd0tDblJvWlhkcGNtVXVhVzRvQUFQAQ?hl=en-IN&gl=IN&ceid=IN%3Aen';
+    const DESCRIPTION = 'Latest articles from The Wire Google News Publications feed';
     const MAINTAINER = 'ChatGPT';
     const PARAMETERS = [];
 
     public function collectData() {
         $html = getSimpleHTMLDOM(self::URI);
         if (!$html) {
-            throw new Exception('Could not fetch Google News search results.');
+            throw new Exception('Could not fetch Google News publications page.');
         }
 
-        // Find each article container
-        foreach ($html->find('div.IL9Cne') as $articleDiv) {
+        // Find all article containers
+        $articles = $html->find('div.IL9Cne');
+
+        if (!$articles || count($articles) === 0) {
+            throw new Exception('No articles found on the Google News publications page.');
+        }
+
+        foreach ($articles as $article) {
             $item = [];
 
-            // Extract source site (optional, to confirm it's thewire.in)
-            $source = $articleDiv->find('div.vr1PYe', 0);
-            if (!$source || strtolower(trim($source->plaintext)) !== 'thewire.in') {
-                // Skip if source isn't The Wire
-                continue;
-            }
-
-            // Extract article link and title
-            $linkElem = $articleDiv->find('a.JtKRv', 0);
+            // Article URL inside <a class="JtKRv">
+            $linkElem = $article->find('a.JtKRv', 0);
             if (!$linkElem || !isset($linkElem->href)) {
-                continue;
+                continue; // skip if no link found
             }
 
-            // Google News uses relative links starting with './read/'
             $href = $linkElem->href;
-            if (strpos($href, './') === 0) {
-                // Absolute URL construction
-                $href = 'https://news.google.com' . substr($href, 1);
-            }
 
+            // Google News URLs often have relative links starting with './read/'
+            if (strpos($href, './') === 0) {
+                $href = 'https://news.google.com/' . ltrim($href, './');
+            } elseif (strpos($href, '/') === 0) {
+                $href = 'https://news.google.com' . $href;
+            }
             $item['uri'] = $href;
             $item['uid'] = $href;
 
+            // Title is the anchor text inside the <a.JtKRv>
             $item['title'] = trim($linkElem->plaintext);
 
-            // Extract thumbnail image if available
-            $imgElem = $articleDiv->find('img.qEdqNd', 0);
+            // Optional: Extract image (if any)
+            $imgElem = $article->find('img.Quavad', 0);
             if ($imgElem && isset($imgElem->src)) {
                 $item['enclosures'] = [$imgElem->src];
             }
 
-            // Description is not usually present in Google News search results, so leave empty or add fallback
-            $item['content'] = '';
+            // Optional: Extract source name or other meta if available
+            // Usually in the div with class .XlKvRb but not reliable here; skipping for now.
 
-            // Timestamp is not directly present; use current time as fallback
+            // Set timestamp as current time (no timestamp visible)
             $item['timestamp'] = time();
+
+            // No content summary in Google News snippets, empty string
+            $item['content'] = '';
 
             $this->items[] = $item;
         }
 
         if (empty($this->items)) {
-            throw new Exception('No The Wire articles found on Google News.');
+            throw new Exception('No valid articles parsed from the Google News publications page.');
         }
     }
 }
