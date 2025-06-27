@@ -3,7 +3,7 @@
 class FTCustomHTMLBridge extends BridgeAbstract {
     const NAME = 'FT Custom HTML Bridge';
     const URI = 'https://vampyy97.github.io/FT_240625_P2.html';
-    const DESCRIPTION = 'Parses the user-hosted FT HTML and returns items as feed';
+    const DESCRIPTION = 'Parses FT-format HTML hosted on GitHub Pages';
     const MAINTAINER = 'Vampyy97';
 
     const PARAMETERS = [];
@@ -14,32 +14,46 @@ class FTCustomHTMLBridge extends BridgeAbstract {
             returnServerError('Could not load FT HTML');
         }
 
-        // Loop through article blocks (you can fine-tune selector as per structure)
-        foreach ($html->find('h2') as $index => $heading) {
-            $item = [];
+        $section = $html->find('div.WordSection1', 0);
+        if (!$section) {
+            returnServerError('WordSection1 not found');
+        }
 
-            $item['title'] = trim($heading->plaintext);
-            $item['uri'] = self::URI . '#article-' . $index;
-            $item['uid'] = md5($item['title']);
+        $elements = $section->find('p.MsoNormal, img');
 
-            // Try to get the following paragraph and image (adjust tag positions as needed)
-            $content = '';
+        $items = [];
+        $currentItem = null;
 
-            $next = $heading->next_sibling();
-            while ($next && ($next->tag !== 'h2')) {
-                if ($next->tag === 'p') {
-                    $content .= '<p>' . $next->innertext . '</p>';
-                } elseif ($next->tag === 'img') {
-                    $imgSrc = $next->src;
-                    $content .= '<img src="' . $imgSrc . '">';
+        foreach ($elements as $el) {
+            if ($el->tag === 'p' && $el->find('b span', 0)) {
+                // New article starts
+                if ($currentItem !== null) {
+                    $this->items[] = $currentItem;
                 }
-                $next = $next->next_sibling();
+
+                $title = trim($el->find('b span', 0)->plaintext);
+                $currentItem = [
+                    'title' => $title,
+                    'uri' => self::URI . '#'. md5($title),
+                    'uid' => md5($title),
+                    'content' => '',
+                    'timestamp' => time(),
+                ];
+            } elseif ($currentItem !== null) {
+                if ($el->tag === 'p') {
+                    $currentItem['content'] .= '<p>' . $el->innertext . '</p>';
+                } elseif ($el->tag === 'img' && isset($el->src)) {
+                    $imgSrc = $el->src;
+                    if (strpos($imgSrc, 'http') !== 0) {
+                        $imgSrc = dirname(self::URI) . '/' . ltrim($imgSrc, '/');
+                    }
+                    $currentItem['content'] .= '<img src="' . htmlspecialchars($imgSrc) . '">';
+                }
             }
+        }
 
-            $item['content'] = $content;
-            $item['timestamp'] = time();
-
-            $this->items[] = $item;
+        if ($currentItem !== null) {
+            $this->items[] = $currentItem;
         }
     }
 }
