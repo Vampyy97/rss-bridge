@@ -1,7 +1,7 @@
 <?php
 
 class GoogleNewsPublicationBridge extends BridgeAbstract {
-    const NAME = 'Google News Publication';
+    const NAME = 'The Wire India';
     // This URL can be parameterized if you want dynamic search or publication IDs
     const URI = 'https://news.google.com/search?q=site:thewire.in&hl=en-IN&gl=IN&ceid=IN:en';
     const DESCRIPTION = 'Google News publication articles feed';
