@@ -1,59 +1,50 @@
 <?php
 
 class FTCustomHTMLBridge extends BridgeAbstract {
-    const NAME = 'FT Custom HTML Bridge';
+    const NAME = 'Financial Times Custom HTML';
     const URI = 'https://vampyy97.github.io/FT_240625_P2.html';
-    const DESCRIPTION = 'Parses FT-format HTML hosted on GitHub Pages';
-    const MAINTAINER = 'Vampyy97';
-
-    const PARAMETERS = [];
+    const DESCRIPTION = 'Extract articles structured with <h2> headings from a custom HTML file';
+    const MAINTAINER = 'YourName';
 
     public function collectData() {
         $html = getSimpleHTMLDOM(self::URI);
         if (!$html) {
-            returnServerError('Could not load FT HTML');
+            throw new Exception('Could not fetch the HTML file.');
         }
 
-        $section = $html->find('div.WordSection1', 0);
-        if (!$section) {
-            returnServerError('WordSection1 not found');
-        }
+        // Get the main title (from <h1>)
+        $mainTitleElem = $html->find('h1', 0);
+        $mainTitle = $mainTitleElem ? $mainTitleElem->plaintext : 'Financial Times';
 
-        $elements = $section->find('p.MsoNormal, img');
+        // Find all <h2>
+        foreach ($html->find('h2') as $h2) {
+            $item = [];
+            $item['title'] = trim($h2->plaintext);
 
-        $items = [];
-        $currentItem = null;
+            // Start gathering content after this <h2> until the next <h2>
+            $contentHtml = '';
+            $elem = $h2->next_sibling();
 
-        foreach ($elements as $el) {
-            if ($el->tag === 'p' && $el->find('b span', 0)) {
-                // New article starts
-                if ($currentItem !== null) {
-                    $this->items[] = $currentItem;
+            // Defensive: Sometimes next_sibling may return text nodes, skip those
+            while ($elem && (!isset($elem->tag) || strtolower($elem->tag) != 'h2')) {
+                if (isset($elem->outertext)) {
+                    $contentHtml .= $elem->outertext;
                 }
-
-                $title = trim($el->find('b span', 0)->plaintext);
-                $currentItem = [
-                    'title' => $title,
-                    'uri' => self::URI . '#'. md5($title),
-                    'uid' => md5($title),
-                    'content' => '',
-                    'timestamp' => time(),
-                ];
-            } elseif ($currentItem !== null) {
-                if ($el->tag === 'p') {
-                    $currentItem['content'] .= '<p>' . $el->innertext . '</p>';
-                } elseif ($el->tag === 'img' && isset($el->src)) {
-                    $imgSrc = $el->src;
-                    if (strpos($imgSrc, 'http') !== 0) {
-                        $imgSrc = dirname(self::URI) . '/' . ltrim($imgSrc, '/');
-                    }
-                    $currentItem['content'] .= '<img src="' . htmlspecialchars($imgSrc) . '">';
-                }
+                $elem = $elem->next_sibling();
             }
+
+            $item['content'] = $contentHtml;
+            $item['uri'] = self::URI . '#' . urlencode($item['title']);
+            $item['timestamp'] = time();
+            $item['author'] = $mainTitle;
+
+            $this->items[] = $item;
         }
 
-        if ($currentItem !== null) {
-            $this->items[] = $currentItem;
+        if (empty($this->items)) {
+            throw new Exception('No articles found in the HTML file.');
         }
     }
 }
+
+
