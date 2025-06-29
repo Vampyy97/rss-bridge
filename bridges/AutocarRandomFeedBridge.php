@@ -3,49 +3,55 @@
 class AutocarRandomFeedBridge extends BridgeAbstract {
     const NAME = 'Autocar India Random Feed';
     const URI = 'https://www.autocarindia.com/';
-    const DESCRIPTION = 'Shows a randomised mix of feeds from car road tests, bike road tests, and magazine sections.';
-    const MAINTAINER = 'ChatGPT';
+    const DESCRIPTION = 'Aggregates random articles from multiple Autocar India RSS feeds with proper HTML content.';
+    const MAINTAINER = 'ChatGPT-OpenAI';
 
-    // RSS URLs
-    private $rssUrls = [
+    // List of RSS feed URLs
+    private $feedUrls = [
         'https://www.autocarindia.com/rss/car-road-tests',
         'https://www.autocarindia.com/rss/bike-road-tests',
-        'https://www.autocarindia.com/rss/magazine',
+        'https://www.autocarindia.com/rss/magazine'
     ];
 
-    // How many random feeds to show
-    const RANDOM_FEED_COUNT = 15;
+    const PARAMETERS = [];
 
     public function collectData() {
         $allItems = [];
 
-        foreach ($this->rssUrls as $url) {
-            $rss = getSimpleHTMLDOM($url);
+        foreach ($this->feedUrls as $feedUrl) {
+            $rss = getSimpleHTMLDOM($feedUrl);
             if (!$rss) continue;
 
             foreach ($rss->find('item') as $entry) {
                 $item = [];
-                $item['title'] = $entry->find('title', 0)->plaintext;
-                $item['uri'] = $entry->find('link', 0)->plaintext;
+                $item['title'] = trim($entry->find('title', 0)->innertext);
+                $item['uri'] = $entry->find('link', 0)->innertext;
                 $item['uid'] = $item['uri'];
 
+                // Use the raw HTML description as content
                 $desc = $entry->find('description', 0);
-                $item['content'] = $desc ? $desc->innertext : '';
+                // decode HTML entities just ONCE
+                $htmlContent = html_entity_decode($desc ? $desc->innertext : '', ENT_QUOTES | ENT_XML1, 'UTF-8');
+                $item['content'] = $htmlContent;
 
-                $date = $entry->find('pubDate', 0);
-                if ($date) $item['timestamp'] = strtotime($date->plaintext);
+                // Enclosure/image (optional)
+                $enclosure = $entry->find('enclosure', 0);
+                if ($enclosure && isset($enclosure->src)) {
+                    $item['enclosures'][] = $enclosure->src;
+                }
 
-                $img = $entry->find('enclosure[url]', 0);
-                if ($img) $item['enclosures'] = [$img->url];
+                // Date
+                $dateNode = $entry->find('pubDate', 0);
+                if ($dateNode) {
+                    $item['timestamp'] = strtotime($dateNode->innertext);
+                }
 
                 $allItems[] = $item;
             }
         }
 
-        // Shuffle items to randomize
+        // Shuffle to make it random, and slice to limit (optional, here to 30 items)
         shuffle($allItems);
-
-        // Return only RANDOM_FEED_COUNT items
-        $this->items = array_slice($allItems, 0, self::RANDOM_FEED_COUNT);
+        $this->items = array_slice($allItems, 0, 30);
     }
 }
