@@ -33,7 +33,7 @@ class CaravanBridge extends BridgeAbstract {
         foreach ($articles as $article) {
             $item = [];
 
-            $link = $article->find('a.usp-jfzd85', 0);
+            $link = $article->find('a.usp-hyckll', 0);
             if (!$link || !isset($link->href)) {
                 continue;
             }
