@@ -1,80 +1,60 @@
 <?php
-
 class CaravanBridge extends BridgeAbstract {
-    const NAME = 'The Caravan Magazine (Random Category)';
+    const NAME = 'Caravan Magazine (2024+ layout)';
     const URI = 'https://caravanmagazine.in/';
-    const DESCRIPTION = 'Random articles from The Caravan categories: Media, Politics, Business';
-    const MAINTAINER = 'ChatGPT';
+    const DESCRIPTION = 'Extracts stories from the main grid, including new classes for general and featured articles.';
+    const MAINTAINER = 'Vipul';
+
     const PARAMETERS = [];
 
-    private $categoryUrls = [
-        'https://caravanmagazine.in/media',
-        'https://caravanmagazine.in/politics',
-        'https://caravanmagazine.in/business',
-    ];
+    public function collectData(){
+        $url = 'https://caravanmagazine.in/'; // Main page or section, adjust as needed
+        $html = getSimpleHTMLDOM($url) or returnServerError('Could not load Caravan homepage');
 
-    public function collectData() {
-        // Randomly pick a category URL
-        $url = $this->categoryUrls[array_rand($this->categoryUrls)];
-
-        // Fetch HTML
-        $html = getSimpleHTMLDOM($url);
-        if (!$html) {
-            throw new Exception('Could not fetch The Caravan category page.');
-        }
-
-        // Find article containers
-        $articles = $html->find('div.usp-cz4eoi');
-
-        if (!$articles || count($articles) === 0) {
-            throw new Exception('No articles found on The Caravan page: ' . $url);
-        }
-
-        foreach ($articles as $article) {
-            $item = [];
-
-            $link = $article->find('a.usp-hyckll', 0);
-            if (!$link || !isset($link->href)) {
-                continue;
-            }
-
-            $href = $link->href;
-            if (strpos($href, '/') === 0) {
-                $href = self::URI . ltrim($href, '/');
-            }
-            $item['uri'] = $href;
-            $item['uid'] = $href;
-
-            $categorySpans = $link->find('span.usp-qn1l76');
-            $categories = [];
-            if ($categorySpans) {
-                foreach ($categorySpans as $span) {
-                    $text = trim($span->plaintext);
-                    if ($text !== '/' && $text !== '') {
-                        $categories[] = $text;
-                    }
+        // Each article box
+        foreach($html->find('div.usp-wkni24') as $box) {
+            $img = '';
+            $title = '';
+            $uri = '';
+            $author = '';
+            $section = '';
+            // Get image
+            if($aimg = $box->find('div.usp-frnmpu a', 0)) {
+                $uri = $aimg->href;
+                if(strpos($uri, 'http') !== 0) $uri = 'https://caravanmagazine.in' . $uri;
+                $imgTag = $aimg->find('img', 0);
+                if($imgTag) {
+                    $img = $imgTag->src;
+                    if(strpos($img, '//') === 0) $img = 'https:' . $img;
                 }
             }
-            $item['category'] = implode(' / ', $categories);
-
-            $title = trim($link->plaintext);
-            foreach ($categories as $cat) {
-                $title = str_replace($cat, '', $title);
+            // Get main link
+            if($alink = $box->find('div.usp-cz4eoi a.usp-jfzd85', 0)) {
+                // Section/Type
+                $section = trim($alink->find('span.usp-hyckll', 0)->plaintext ?? '');
+                // Headline
+                $title = trim($alink->find('span.usp-htaabc', 0)->plaintext ?? '');
+                // Author(s)
+                $authbox = $alink->find('span.usp-nkz2al', 0);
+                if($authbox) {
+                    $author = trim($authbox->plaintext);
+                }
             }
-            $title = trim(str_replace(['/', "Editor's Pick"], '', $title));
-            $item['title'] = $title ?: 'No title';
 
-            $sourceSpan = $link->find('span.usp-nkz2al span', 0);
-            $item['author'] = $sourceSpan ? trim($sourceSpan->plaintext) : 'The Caravan';
+            if(!$title) continue;
+            $content = '';
+            if($img) $content .= "<img src='$img' style='max-width:400px;'><br>";
+            if($section) $content .= "<b>$section</b><br>";
+            $content .= "<b>$title</b><br>";
+            if($author) $content .= "<i>$author</i><br>";
 
-            $item['content'] = '';
-            $item['timestamp'] = time();
-
-            $this->items[] = $item;
-        }
-
-        if (empty($this->items)) {
-            throw new Exception('No valid articles parsed from The Caravan page: ' . $url);
+            $this->items[] = [
+                'title' => $title,
+                'uri' => $uri,
+                'content' => $content,
+                'author' => $author,
+                'timestamp' => time() // No timestamp on homepage grid, could fetch from article page if needed
+            ];
         }
     }
 }
