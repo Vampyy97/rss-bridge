@@ -1,59 +1,66 @@
 <?php
 class CaravanBridge extends BridgeAbstract {
-    const NAME = 'Caravan Magazine (2024+ layout)';
+    const NAME = 'Caravan Magazine (2024)';
     const URI = 'https://caravanmagazine.in/';
-    const DESCRIPTION = 'Extracts stories from the main grid, including new classes for general and featured articles.';
+    const DESCRIPTION = 'Fetches latest stories from Caravan using new layout (June 2024)';
     const MAINTAINER = 'Vipul';
 
-    const PARAMETERS = [];
+    const PARAMETERS = [
+        [
+            'section' => [
+                'name' => 'Section URL',
+                'type' => 'text',
+                'defaultValue' => 'https://caravanmagazine.in/',
+                'required' => false,
+                'title' => 'Paste a section URL or leave blank for homepage'
+            ]
+        ]
+    ];
 
-    public function collectData(){
-        $url = 'https://caravanmagazine.in/'; // Main page or section, adjust as needed
-        $html = getSimpleHTMLDOM($url) or returnServerError('Could not load Caravan homepage');
+    public function collectData() {
+        $sectionUrl = $this->getInput('section') ?: self::URI;
+        $html = getSimpleHTMLDOM($sectionUrl) or returnServerError('Could not load Caravan page');
 
-        // Each article box
-        foreach($html->find('div.usp-wkni24') as $box) {
+        foreach ($html->find('div.usp-wkni24') as $card) {
+            // Main article link
+            $alink = $card->find('div.usp-cz4eoi a.usp-jfzd85', 0);
+            if (!$alink) continue;
+
+            $relurl = $alink->href;
+            $uri = strpos($relurl, 'http') === 0 ? $relurl : 'https://caravanmagazine.in' . $relurl;
+
+            // Title
+            $title = trim($alink->find('span.usp-htaabc', 0)->plaintext ?? '');
+            if (!$title) continue;
+
+            // Section/category (can be composite, e.g. "Politics / Commentary")
+            $section = trim($alink->find('span.usp-hyckll', 0)->plaintext ?? '');
+
+            // Authors (could be one or more, comma separated)
+            $authors = trim($alink->find('span.usp-nkz2al', 0)->plaintext ?? '');
+
+            // Image
             $img = '';
-            $title = '';
-            $uri = '';
-            $author = '';
-            $section = '';
-            // Get image
-            if($aimg = $box->find('div.usp-frnmpu a', 0)) {
-                $uri = $aimg->href;
-                if(strpos($uri, 'http') !== 0) $uri = 'https://caravanmagazine.in' . $uri;
-                $imgTag = $aimg->find('img', 0);
-                if($imgTag) {
-                    $img = $imgTag->src;
-                    if(strpos($img, '//') === 0) $img = 'https:' . $img;
-                }
-            }
-            // Get main link
-            if($alink = $box->find('div.usp-cz4eoi a.usp-jfzd85', 0)) {
-                // Section/Type
-                $section = trim($alink->find('span.usp-hyckll', 0)->plaintext ?? '');
-                // Headline
-                $title = trim($alink->find('span.usp-htaabc', 0)->plaintext ?? '');
-                // Author(s)
-                $authbox = $alink->find('span.usp-nkz2al', 0);
-                if($authbox) {
-                    $author = trim($authbox->plaintext);
-                }
+            $aimg = $card->find('div.usp-frnmpu a img.usp-lmbjuj', 0);
+            if ($aimg && $aimg->src) {
+                $img = $aimg->src;
+                if (strpos($img, '//') === 0) $img = 'https:' . $img;
             }
 
-            if(!$title) continue;
+            // Compose content
             $content = '';
-            if($img) $content .= "<img src='$img' style='max-width:400px;'><br>";
-            if($section) $content .= "<b>$section</b><br>";
-            $content .= "<b>$title</b><br>";
-            if($author) $content .= "<i>$author</i><br>";
+            if ($img) $content .= '<img src="' . $img . '" style="max-width:500px;"><br>';
+            if ($section) $content .= '<b>' . htmlspecialchars($section) . '</b><br>';
+            $content .= '<b>' . htmlspecialchars($title) . '</b><br>';
+            if ($authors) $content .= '<i>' . htmlspecialchars($authors) . '</i><br>';
 
             $this->items[] = [
-                'title' => $title,
                 'uri' => $uri,
+                'title' => $title,
+                'author' => $authors,
+                'timestamp' => time(), // No time in grid; can crawl inner article if needed
                 'content' => $content,
-                'author' => $author,
-                'timestamp' => time() // No timestamp on homepage grid, could fetch from article page if needed
+                'enclosures' => $img ? [$img] : []
             ];
         }
     }
