@@ -2,49 +2,42 @@
 
 class FTCustomHTMLBridge extends BridgeAbstract {
     const NAME = 'Financial Times Custom HTML';
-    const URI = 'https://vampyy97.github.io/FT_240625_P2.html';
-    const DESCRIPTION = 'Extract articles structured with <h2> headings from a custom HTML file';
-    const MAINTAINER = 'YourName';
+    const URI = 'https://vampyy97.github.io/index.html';
+    const DESCRIPTION = 'Extract articles listed in index.html that link to individual article_X.html pages';
+    const MAINTAINER = 'Vipul Agrawal';
 
     public function collectData() {
-        $html = getSimpleHTMLDOM(self::URI);
-        if (!$html) {
-            throw new Exception('Could not fetch the HTML file.');
+        $indexHtml = getSimpleHTMLDOM(self::URI);
+        if (!$indexHtml) {
+            throw new Exception('Could not fetch index.html');
         }
 
-        // Get the main title (from <h1>)
-        $mainTitleElem = $html->find('h1', 0);
-        $mainTitle = $mainTitleElem ? $mainTitleElem->plaintext : 'Financial Times';
+        foreach ($indexHtml->find('ul li a') as $a) {
+            $href = $a->href;
+            $title = trim($a->plaintext);
 
-        // Find all <h2>
-        foreach ($html->find('h2') as $h2) {
+            if (!$href || !$title) continue;
+
+            $fullUrl = urljoin(self::URI, $href);
+            $articleHtml = getSimpleHTMLDOM($fullUrl);
+            if (!$articleHtml) continue;
+
+            // Extract article content (everything inside <body>)
+            $body = $articleHtml->find('body', 0);
+            $content = $body ? $body->innertext : 'Content unavailable';
+
             $item = [];
-            $item['title'] = trim($h2->plaintext);
-
-            // Start gathering content after this <h2> until the next <h2>
-            $contentHtml = '';
-            $elem = $h2->next_sibling();
-
-            // Defensive: Sometimes next_sibling may return text nodes, skip those
-            while ($elem && (!isset($elem->tag) || strtolower($elem->tag) != 'h2')) {
-                if (isset($elem->outertext)) {
-                    $contentHtml .= $elem->outertext;
-                }
-                $elem = $elem->next_sibling();
-            }
-
-            $item['content'] = $contentHtml;
-            $item['uri'] = self::URI . '#' . urlencode($item['title']);
+            $item['title'] = $title;
+            $item['uri'] = $fullUrl;
+            $item['content'] = $content;
             $item['timestamp'] = time();
-            $item['author'] = $mainTitle;
+            $item['author'] = 'Financial Times (HTML)';
 
             $this->items[] = $item;
         }
 
         if (empty($this->items)) {
-            throw new Exception('No articles found in the HTML file.');
+            throw new Exception('No articles found or fetched from index.');
         }
     }
 }
-
-
